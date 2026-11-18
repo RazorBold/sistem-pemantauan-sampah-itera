@@ -71,6 +71,24 @@ Setiap alert penuh/berserakan berisi link konfirmasi `/konfirmasi/<token>`. Petu
 untuk menandai sampah sudah ditangani, tanpa perlu login. Isi **Alamat dashboard** dengan IP laptop
 (mis. `http://192.168.1.5:5000`) agar link bisa dibuka dari jaringan yang sama.
 
+## Notebook deteksi (`deteksi_sampah.ipynb`)
+
+Notebook terpisah dari web untuk menguji alur deteksi sesuai diagram alir penelitian:
+webcam/folder → input citra → preprocessing → resize & normalisasi → backbone → neck (fusi fitur) →
+detection head → bounding box + kelas + confidence → NMS → valid? → klasifikasi (kosong/berserakan/penuh) →
+tampil di web → simpan data → WhatsApp.
+
+```bash
+pip install ultralytics notebook matplotlib pandas
+jupyter notebook deteksi_sampah.ipynb
+```
+
+- Gambar uji: `static/img/simulasi/<penuh|kosong|berserakan>/` (nama folder = label asli untuk evaluasi).
+- Mode `zero-shot` (bawaan, belum ada model terlatih): YOLO-World + CLIP. Unduhan pertama sekitar 400 MB.
+- Mode `custom`: otomatis aktif jika `models/best.pt` (kelas penuh/kosong/berserakan) tersedia.
+- Hasil disimpan di `notebook_output/` (CSV monitoring + gambar beranotasi).
+- `KIRIM_KE_WEB = True` mengirim hasil ke dashboard (set URL streaming CCTV = `eksternal`).
+
 ## Struktur
 
 ```

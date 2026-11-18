@@ -26,3 +26,7 @@ Thumbs.db
 
 # file kosong sementara
 /a
+
+# Output notebook deteksi
+notebook_output/
+.ipynb_checkpoints/
