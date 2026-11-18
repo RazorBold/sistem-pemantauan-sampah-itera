@@ -12,6 +12,10 @@ python app.py
 
 Buka http://localhost:5000, lalu login dengan **admin / admin123** (segera ganti di Pengaturan > Akun).
 
+OpenCV (`cv2`) **tidak wajib**. Tanpa OpenCV, web tetap jalan penuh di mode Simulasi dan eksternal
+(gambar diolah dengan Pillow). OpenCV baru dibutuhkan untuk webcam, CCTV RTSP, file video, dan model YOLO:
+`pip install opencv-python` (nama paketnya bukan `cv2`).
+
 Database SQLite dibuat otomatis di `data/sampah.db`. Snapshot bukti deteksi disimpan di `data/snapshots/`.
 
 Ingin mencoba halaman Laporan dengan data 14 hari? Jalankan:

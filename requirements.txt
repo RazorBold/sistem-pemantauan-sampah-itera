@@ -1,8 +1,10 @@
 Flask>=3.0
-opencv-python>=4.8
 numpy
+Pillow
 requests
 openpyxl
 reportlab
-# Opsional – aktifkan deteksi YOLO asli (taruh model di models/best.pt):
+# Opsional – webcam / CCTV RTSP / file video (tanpa ini web tetap jalan di mode Simulasi):
+# opencv-python>=4.8
+# Opsional – aktifkan deteksi YOLO asli (taruh model di models/best.pt), otomatis memasang opencv:
 # ultralytics

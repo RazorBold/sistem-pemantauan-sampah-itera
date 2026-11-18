@@ -17,9 +17,14 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 
-import cv2
 import numpy as np
 import requests
+from PIL import Image as PILImage, ImageDraw, ImageFont
+
+try:  # OpenCV opsional: tanpa cv2, web tetap jalan untuk mode Simulasi & eksternal
+    import cv2
+except ImportError:
+    cv2 = None
 from flask import (Flask, Response, abort, flash, g, jsonify, redirect,
                    render_template, request, send_file, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -28,6 +33,58 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "sampah.db")
 SNAP_DIR = os.path.join(BASE_DIR, "data", "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
+
+
+
+# ---------------------------------------------------------------------------
+# Utilitas gambar: pakai OpenCV jika ada, jika tidak pakai Pillow.
+# Semua frame tetap berupa array numpy BGR (format OpenCV).
+# ---------------------------------------------------------------------------
+def _pil_to_bgr(im):
+    return np.asarray(im.convert("RGB"))[..., ::-1].copy()
+
+
+def img_read(path):
+    if cv2 is not None:
+        return cv2.imread(path)
+    try:
+        return _pil_to_bgr(PILImage.open(path))
+    except Exception:
+        return None
+
+
+def img_decode(data):
+    if not data:
+        return None
+    if cv2 is not None:
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    try:
+        return _pil_to_bgr(PILImage.open(io.BytesIO(data)))
+    except Exception:
+        return None
+
+
+def img_resize(im, w, h):
+    if cv2 is not None:
+        return cv2.resize(im, (w, h), interpolation=cv2.INTER_AREA if w < im.shape[1] else cv2.INTER_CUBIC)
+    return _pil_to_bgr(PILImage.fromarray(im[..., ::-1]).resize((w, h), PILImage.LANCZOS))
+
+
+def img_encode(im, quality=85):
+    if cv2 is not None:
+        ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buf.tobytes() if ok else None
+    out = io.BytesIO()
+    PILImage.fromarray(im[..., ::-1]).save(out, "JPEG", quality=quality)
+    return out.getvalue()
+
+
+def img_write(path, im, quality=85):
+    data = img_encode(im, quality)
+    if data:
+        with open(path, "wb") as f:
+            f.write(data)
+
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or "ganti-secret-key-ini-" + "itera"
@@ -472,13 +529,12 @@ class Simulator:
     def _image(self, row):
         key = (row["id"], row["file_path"])
         if key not in self.images:
-            im = cv2.imread(os.path.join(BASE_DIR, row["file_path"]))
+            im = img_read(os.path.join(BASE_DIR, row["file_path"]))
             if im is None:
                 im = np.full((441, 960, 3), 40, np.uint8)
             h, w = im.shape[:2]
             if w != 960:
-                im = cv2.resize(im, (960, int(960 * h / w)),
-                                interpolation=cv2.INTER_AREA if w > 960 else cv2.INTER_CUBIC)
+                im = img_resize(im, 960, int(960 * h / w))
             self.images[key] = im
         return self.images[key]
 
@@ -548,6 +604,8 @@ class Monitor:
         self.cap_url = url
 
     def _read_camera(self, url):
+        if cv2 is None:  # kamera/RTSP/video butuh OpenCV
+            return None
         if self.cap is None or self.cap_url != url or self.restart_flag or not self.cap.isOpened():
             self.restart_flag = False
             self._open(url)
@@ -589,6 +647,8 @@ class Monitor:
                     time.sleep(0.25)
                     continue
                 frame = self._read_camera(url)
+                if cv2 is None:
+                    self.mode = "kamera (butuh OpenCV)"
                 if frame is None:
                     self._set_online(False, cam)
                     time.sleep(3)
@@ -613,12 +673,12 @@ class Monitor:
     def _publish(self, frame):
         h, w = frame.shape[:2]
         if w > 1280:
-            frame = cv2.resize(frame, (1280, int(1280 * h / w)))
+            frame = img_resize(frame, 1280, int(1280 * h / w))
             h, w = frame.shape[:2]
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if ok:
+        jpg = img_encode(frame, 80)
+        if jpg:
             with self.lock:
-                self.jpeg = buf.tobytes()
+                self.jpeg = jpg
                 self.frame_size = (w, h)
 
     def _set_online(self, online, cam):
@@ -698,7 +758,7 @@ class Monitor:
     def _record(self, cam, kind, fullness, conf, frame, boxes):
         snap = draw_boxes(frame.copy(), boxes, parse_roi())
         fname = f"{datetime.now():%Y%m%d_%H%M%S}_{kind}.jpg"
-        cv2.imwrite(os.path.join(SNAP_DIR, fname), snap, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        img_write(os.path.join(SNAP_DIR, fname), snap, 85)
         con = db_connect()
         cur = con.execute("INSERT INTO detection_logs(camera_id,detection_type,fullness_percentage,confidence_score,"
                           "snapshot_path,detected_at) VALUES(?,?,?,?,?,?)",
@@ -737,7 +797,39 @@ class Monitor:
             }
 
 
+def _font(size=14):
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:  # Pillow lama
+        return ImageFont.load_default()
+
+
+def _draw_boxes_pil(frame, boxes, roi=None):
+    """Versi Pillow dari draw_boxes (dipakai jika OpenCV tidak terpasang)."""
+    h, w = frame.shape[:2]
+    im = PILImage.fromarray(frame[..., ::-1].copy())
+    d, font = ImageDraw.Draw(im), _font()
+    if roi:
+        d.rectangle([int(roi[0] * w), int(roi[1] * h), int(roi[2] * w) - 1, int(roi[3] * h) - 1],
+                    outline=(230, 160, 60), width=1)
+    for b in boxes:
+        x1, y1, x2, y2 = [int(v * (w if i % 2 == 0 else h)) for i, v in enumerate(b["box"])]
+        col = (200, 40, 40) if b["kind"] in ("penuh", "berserakan") else (60, 160, 80)
+        d.rectangle([x1, y1, x2, y2], outline=col, width=2)
+        txt = f"Sampah {LABEL.get(b['kind'], b['kind'])} ({b['conf'] * 100:.0f}%)"
+        l, t, r, bt = d.textbbox((0, 0), txt, font=font)
+        top = max(0, y1 - (bt - t) - 8)
+        d.rectangle([x1, top, x1 + (r - l) + 8, y1], fill=col)
+        d.text((x1 + 4, top + 4 - t), txt, fill=(255, 255, 255), font=font)
+    ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S WIB")
+    d.text((10, h - 24), ts, fill=(255, 255, 255), font=font)
+    frame[:] = np.asarray(im)[..., ::-1]
+    return frame
+
+
 def draw_boxes(frame, boxes, roi=None):
+    if cv2 is None:
+        return _draw_boxes_pil(frame, boxes, roi)
     h, w = frame.shape[:2]
     if roi:
         x1, y1, x2, y2 = int(roi[0] * w), int(roi[1] * h), int(roi[2] * w) - 1, int(roi[3] * h) - 1
@@ -1232,16 +1324,16 @@ def simulasi():
             f = request.files.get("image")
             cond = request.form.get("condition", "penuh")
             data = f.read() if f else b""
-            img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None
+            img = img_decode(data)
             if cond not in SIM_CONDITIONS or img is None:
                 flash("Pilih file gambar JPG/PNG yang valid dan kondisinya.", "err")
             else:
                 h, w = img.shape[:2]
                 if w > 1280:
-                    img = cv2.resize(img, (1280, int(1280 * h / w)), interpolation=cv2.INTER_AREA)
+                    img = img_resize(img, 1280, int(1280 * h / w))
                 os.makedirs(os.path.join(BASE_DIR, "data", "sim"), exist_ok=True)
                 rel = f"data/sim/{secrets.token_hex(8)}.jpg"
-                cv2.imwrite(os.path.join(BASE_DIR, rel), img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+                img_write(os.path.join(BASE_DIR, rel), img, 88)
                 default_full, boxes = SIM_CONDITIONS[cond]
                 try:
                     full = float(request.form["fullness"]) if request.form.get("fullness") else default_full
@@ -1386,14 +1478,15 @@ def api_ingest():
     frame = None
     if body.get("image"):
         import base64
-        arr = np.frombuffer(base64.b64decode(body["image"]), np.uint8)
-        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        frame = img_decode(base64.b64decode(body["image"]))
         if frame is not None:
             monitor._publish(frame)
     if frame is None:
         with monitor.lock:
             jpg = monitor.jpeg
-        frame = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR) if jpg else np.zeros((360, 640, 3), np.uint8)
+        frame = img_decode(jpg) if jpg else None
+        if frame is None:
+            frame = np.zeros((360, 640, 3), np.uint8)
     monitor.mode = "eksternal"
     monitor.last_ingest = time.time()
     monitor._set_online(True, get_camera())
