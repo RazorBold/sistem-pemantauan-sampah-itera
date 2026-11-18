@@ -1,0 +1,87 @@
+# Sistem Pemantauan Sampah Cerdas – Kampus ITERA
+
+Web dashboard berbasis Flask untuk memantau tempat sampah lewat CCTV + AI (YOLO), lengkap dengan
+notifikasi WhatsApp, riwayat deteksi, laporan PDF/Excel, dan pengaturan. Semua berjalan lokal.
+
+## Menjalankan
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+Buka http://localhost:5000, lalu login dengan **admin / admin123** (segera ganti di Pengaturan > Akun).
+
+Database SQLite dibuat otomatis di `data/sampah.db`. Snapshot bukti deteksi disimpan di `data/snapshots/`.
+
+Ingin mencoba halaman Laporan dengan data 14 hari? Jalankan:
+`flask --app app seed-demo` (data contoh, jangan dipakai untuk hasil penelitian).
+
+## Sumber kamera (Pengaturan > Kamera > URL streaming)
+
+| Nilai | Arti |
+|---|---|
+| `demo` | Mode simulasi (bawaan). Memakai gambar contoh dan skenario kosong → penuh → berserakan |
+| `0` | Webcam laptop |
+| `rtsp://user:pass@IP:554/...` | IP camera / CCTV RTSP |
+| `C:\video\uji.mp4` | File video (diputar berulang) |
+| `eksternal` | Hasil deteksi dikirim oleh `detector_client.py` lewat API |
+
+### Menu Simulasi
+
+Saat URL streaming = `demo`, CCTV menampilkan foto-foto di menu **Simulasi**:
+- **Putar otomatis**: ganti skenario setiap 10–60 detik (penuh, kosong, berserakan, cahaya redup, CCTV offline).
+- **Tampilkan**: kunci satu skenario untuk demo/uji tertentu.
+- **Tambah skenario**: unggah foto sendiri, lalu pilih kondisi dan kepenuhannya. Kotak deteksi dibuat otomatis sesuai kondisi.
+- Setiap deteksi baru memunculkan alert pop-up di halaman admin mana pun (dengan bunyi setelah halaman diklik sekali),
+  dan mengirim WhatsApp sesuai aturan notifikasi.
+
+Jika kamera tidak bisa dibaca, dashboard menampilkan **CCTV offline**. Kondisi ini dicatat sebagai
+kejadian `offline` dan tidak dihitung sebagai kondisi sampah.
+
+## Model AI (YOLO)
+
+1. `pip install ultralytics`
+2. Taruh model hasil training di `models/best.pt` (path bisa diubah di Pengaturan > Deteksi AI).
+3. Nama kelas dikenali dari kata kunci: `penuh/full`, `kosong/empty`, `berserakan/scattered/litter`,
+   `sebagian/half/bin`.
+
+Persentase kepenuhan diestimasi dari kelas + confidence (`estimate_fullness()` di `app.py`). Jika
+penelitian memakai metode lain (segmentasi, regresi tinggi tumpukan), ganti fungsi tersebut.
+
+Alur di `Monitor._process()`:
+1. Buang deteksi dengan confidence di bawah ambang.
+2. Hitung sampah berserakan hanya jika berada di dalam ROI.
+3. Kondisi harus sama selama *N frame stabil* sebelum dicatat. Ini mengurangi false alert.
+4. Jika kondisi stabil berubah, sistem menyimpan snapshot, mencatat `detection_logs`, dan membuat `cleaning_actions` (untuk penuh/berserakan).
+5. Kirim WhatsApp jika aturan notifikasi aktif dan cooldown sudah lewat.
+6. Penanganan otomatis ditandai selesai saat sistem mendeteksi tong kembali tidak penuh atau area kembali bersih.
+
+## WhatsApp
+
+Pilih di Pengaturan > WhatsApp API:
+
+- **Simulasi**: tidak mengirim apa pun, tetapi tercatat di riwayat. Cocok untuk uji lokal.
+- **WhatsApp Business Cloud API (Meta)**: isi Access token + Phone Number ID. Status *delivered/read*
+  masuk lewat webhook `/webhook/whatsapp`, yang butuh URL publik, misalnya ngrok. Pesan teks bebas hanya bisa
+  dikirim dalam jendela 24 jam. Di luar itu Meta mewajibkan *message template*.
+- **Fonnte**: isi token dari fonnte.com. Pilihan paling sederhana untuk nomor Indonesia.
+
+Setiap alert penuh/berserakan berisi link konfirmasi `/konfirmasi/<token>`. Petugas membukanya dari HP
+untuk menandai sampah sudah ditangani, tanpa perlu login. Isi **Alamat dashboard** dengan IP laptop
+(mis. `http://192.168.1.5:5000`) agar link bisa dibuka dari jaringan yang sama.
+
+## Struktur
+
+```
+app.py                 backend Flask (auth, worker CCTV+AI, WhatsApp, API, laporan)
+detector_client.py     contoh skrip YOLO eksternal -> POST /api/detections
+templates/             halaman (Jinja2)
+static/css, static/js  tampilan & pembaruan real-time (polling /api/state tiap 2,5 detik)
+static/vendor          Chart.js (lokal, tanpa internet)
+models/                taruh best.pt di sini
+data/                  database SQLite + snapshot
+```
+
+Tabel database mengikuti PRD: `users`, `cameras`, `detection_logs`, `notification_recipients`,
+`notification_logs`, `system_settings`, `cleaning_actions`, ditambah `fullness_samples` untuk grafik tren.

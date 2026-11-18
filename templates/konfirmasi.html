@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konfirmasi Penanganan · Sampah ITERA</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+<main class="confirm">
+  <div class="brand"><img src="{{ url_for('static', filename='img/logo-mark.png') }}" alt="" width="48" height="48"><span><b>ITERA</b><small>Pemantauan Sampah Cerdas</small></span></div>
+  <section class="panel">
+    <span class="tag k-{{ a.detection_type }}">{{ LABEL.get(a.detection_type) }}</span>
+    <h1>{{ a.location }}</h1>
+    <dl class="facts">
+      <div><dt>Kamera</dt><dd>{{ a.camera_name }}</dd></div>
+      <div><dt>Terdeteksi</dt><dd>{{ a.detected_at|wib('%d %b %Y, %H:%M') }} WIB</dd></div>
+      {% if a.fullness_percentage is not none %}<div><dt>Kepenuhan</dt><dd>{{ '%.0f%%'|format(a.fullness_percentage) }}</dd></div>{% endif %}
+    </dl>
+    {% if a.action_status == 'selesai' %}
+      <div class="flash ok">Sudah ditangani pada {{ a.confirmed_at|wib('%d %b %Y, %H:%M') }} WIB. Terima kasih.</div>
+    {% else %}
+      <form method="post" class="stack">
+        <label>Catatan (opsional)<input name="notes" maxlength="300" placeholder="Contoh: sampah sudah diangkut"></label>
+        <button class="btn block">Konfirmasi sudah ditangani</button>
+      </form>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>

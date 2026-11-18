@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Masuk · Pemantauan Sampah ITERA</title>
+<link rel="icon" href="{{ url_for('static', filename='img/logo-mark.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+<main class="login">
+  <div class="login-photo" role="img" aria-label="Foto udara kampus Institut Teknologi Sumatera">
+    <div class="login-caption">
+      <p>Sistem Pemantauan Sampah Cerdas</p>
+      <span>CCTV dan AI untuk kampus yang lebih bersih</span>
+    </div>
+  </div>
+  <div class="login-card">
+    <div class="brand big"><img src="{{ url_for('static', filename='img/logo-mark.png') }}" alt="" width="64" height="64">
+      <span><b>ITERA</b><small>Institut Teknologi Sumatera</small></span></div>
+    <h1>Masuk sebagai admin</h1>
+    {% with msgs = get_flashed_messages(with_categories=true) %}{% for c, m in msgs %}<div class="flash {{ c }}">{{ m }}</div>{% endfor %}{% endwith %}
+    {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" class="stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Username<input name="username" autocomplete="username" required autofocus value="{{ request.form.get('username','') }}"></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" name="remember"> Ingat saya di perangkat ini</label>
+      <button class="btn block">Masuk</button>
+    </form>
+    <p class="hint">Petugas kebersihan tidak perlu login: alert dan link konfirmasi dikirim lewat WhatsApp.</p>
+  </div>
+</main>
+</body>
+</html>

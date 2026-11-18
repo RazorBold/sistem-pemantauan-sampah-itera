@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Riwayat Deteksi{% endblock %}
+{% block heading %}Riwayat deteksi{% endblock %}
+{% block sub %}{{ total }} kejadian tercatat{% endblock %}
+{% block content %}
+<section class="panel">
+  <form class="filters" method="get">
+    <label>Dari<input type="date" name="dari" value="{{ args.get('dari','') }}"></label>
+    <label>Sampai<input type="date" name="sampai" value="{{ args.get('sampai','') }}"></label>
+    <label>Kategori
+      <select name="kategori">
+        <option value="">Semua</option>
+        {% for k in ["penuh","berserakan","kosong","offline"] %}<option value="{{ k }}" {{ 'selected' if args.get('kategori')==k }}>{{ LABEL[k] }}</option>{% endfor %}
+      </select></label>
+    <label>Penanganan
+      <select name="status">
+        <option value="">Semua</option>
+        <option value="menunggu" {{ 'selected' if args.get('status')=='menunggu' }}>Menunggu</option>
+        <option value="selesai" {{ 'selected' if args.get('status')=='selesai' }}>Selesai</option>
+      </select></label>
+    <label class="grow">Cari<span class="search">{{ icon("search", 18) }}<input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Tanggal, lokasi, atau catatan"></span></label>
+    <div class="row gap"><button class="btn">Terapkan</button>{% if args %}<a class="btn ghost" href="{{ url_for('riwayat') }}">Reset</a>{% endif %}</div>
+  </form>
+
+  {% if rows %}
+  <div class="tbl-wrap">
+  <table class="tbl">
+    <thead><tr><th>Bukti</th><th>Waktu</th><th>Kondisi</th><th class="num">Kepenuhan</th><th class="num">Confidence</th><th>Penanganan</th><th>WhatsApp</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{% if r.snapshot_path %}<a href="{{ url_for('riwayat_detail', det_id=r.id) }}"><img class="thumb" src="{{ url_for('snapshot', name=r.snapshot_path) }}" alt="Snapshot deteksi {{ r.id }}" loading="lazy"></a>{% else %}<span class="thumb none">{{ icon("image", 18) }}</span>{% endif %}</td>
+        <td>{{ r.detected_at|wib }}</td>
+        <td><span class="tag k-{{ r.detection_type }}">{{ LABEL.get(r.detection_type, r.detection_type) }}</span></td>
+        <td class="num">{{ '%.0f%%'|format(r.fullness_percentage) if r.fullness_percentage is not none else '–' }}</td>
+        <td class="num">{{ '%.0f%%'|format(r.confidence_score*100) if r.confidence_score else '–' }}</td>
+        <td>{% if r.action_status == 'selesai' %}<span class="st ok">Selesai</span>{% elif r.action_status %}<span class="st wait">Menunggu</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+        <td>{% if r.wa_status %}<span class="st {{ 'bad' if r.wa_status=='failed' else 'ok' }}">{{ r.wa_status|capitalize }}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+        <td><a class="link" href="{{ url_for('riwayat_detail', det_id=r.id) }}">Detail</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if pages > 1 %}
+  <nav class="pager" aria-label="Halaman">
+    {% set a = args.to_dict() %}
+    {% if hal > 1 %}{% set _ = a.update({'hal': hal-1}) %}<a class="btn ghost" href="{{ url_for('riwayat', **a) }}">Sebelumnya</a>{% endif %}
+    <span>Halaman {{ hal }} dari {{ pages }}</span>
+    {% if hal < pages %}{% set _ = a.update({'hal': hal+1}) %}<a class="btn ghost" href="{{ url_for('riwayat', **a) }}">Berikutnya</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="empty-state">{{ icon("clock", 36) }}<p>{% if args %}Tidak ada kejadian yang cocok dengan filter ini. Coba perluas rentang tanggal.{% else %}Belum ada deteksi. Kejadian penuh, kosong, dan berserakan akan muncul di sini begitu kondisinya stabil terdeteksi.{% endif %}</p></div>
+  {% endif %}
+</section>
+{% endblock %}

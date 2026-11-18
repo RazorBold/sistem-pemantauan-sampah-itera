@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Laporan{% endblock %}
+{% block heading %}Laporan & statistik{% endblock %}
+{% block sub %}{{ start.strftime('%d %b %Y') }} – {{ end.strftime('%d %b %Y') }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <form class="filters" method="get" id="periodForm">
+    <div class="seg" role="group" aria-label="Periode">
+      {% for p, l in [("harian","Harian"),("mingguan","Mingguan"),("bulanan","Bulanan"),("kustom","Kustom")] %}
+      <label class="{{ 'on' if periode==p }}"><input type="radio" name="periode" value="{{ p }}" {{ 'checked' if periode==p }}>{{ l }}</label>
+      {% endfor %}
+    </div>
+    <label>Dari<input type="date" name="dari" value="{{ start }}"></label>
+    <label>Sampai<input type="date" name="sampai" value="{{ end }}"></label>
+    <button class="btn ghost">Tampilkan</button>
+    <span class="grow"></span>
+    {% set q = request.query_string.decode() %}
+    <a class="btn" href="{{ url_for('laporan_export', fmt='pdf') }}?{{ q }}">{{ icon("download", 18) }} Unduh PDF</a>
+    <a class="btn ghost" href="{{ url_for('laporan_export', fmt='xlsx') }}?{{ q }}">{{ icon("download", 18) }} Unduh Excel</a>
+  </form>
+</section>
+
+<section class="kpis">
+  <article class="kpi"><span class="kpi-ic red">{{ icon("trash", 34) }}</span><div><p class="kpi-label">Sampah penuh</p><p class="kpi-val ink">{{ data.counts.penuh }}</p></div></article>
+  <article class="kpi"><span class="kpi-ic amber">{{ icon("alert", 34) }}</span><div><p class="kpi-label">Sampah berserakan</p><p class="kpi-val ink">{{ data.counts.berserakan }}</p></div></article>
+  <article class="kpi"><span class="kpi-ic green">{{ icon("check", 34) }}</span><div><p class="kpi-label">Sampah kosong</p><p class="kpi-val ink">{{ data.counts.kosong }}</p></div></article>
+  <article class="kpi"><span class="kpi-ic wa">{{ icon("wa", 34) }}</span><div><p class="kpi-label">WhatsApp terkirim / gagal</p><p class="kpi-val ink">{{ data.notif.sent }} <small>/ {{ data.notif.failed }}</small></p></div></article>
+</section>
+
+<div class="dash">
+  <section class="panel">
+    <header class="panel-h"><h2>{{ icon("chart", 24) }} Kejadian per hari</h2></header>
+    <div class="chart-box tall"><canvas id="perDay" aria-label="Grafik kejadian per hari"></canvas></div>
+  </section>
+  <section class="panel">
+    <header class="panel-h"><h2>{{ icon("trend", 24) }} Tren tingkat kepenuhan</h2></header>
+    <div class="chart-box tall"><canvas id="fillChart" aria-label="Grafik rata-rata dan maksimum kepenuhan"></canvas></div>
+  </section>
+  <section class="panel">
+    <header class="panel-h"><h2>{{ icon("clock", 24) }} Jam rawan (penuh & berserakan)</h2></header>
+    <div class="chart-box tall"><canvas id="perHour" aria-label="Grafik frekuensi kejadian per jam"></canvas></div>
+  </section>
+  <section class="panel">
+    <header class="panel-h"><h2>{{ icon("check", 24) }} Penanganan petugas</h2></header>
+    <dl class="facts big">
+      <div><dt>Sudah ditangani</dt><dd>{{ data.handled.selesai }}</dd></div>
+      <div><dt>Menunggu penanganan</dt><dd>{{ data.handled.menunggu }}</dd></div>
+      <div><dt>Rata-rata waktu respons</dt><dd>{{ '%s menit'|format(data.avg_response_min) if data.avg_response_min else '–' }}</dd></div>
+      <div><dt>CCTV offline</dt><dd>{{ data.counts.offline }} kali</dd></div>
+    </dl>
+  </section>
+</div>
+<script id="reportData" type="application/json">{{ data|tojson }}</script>
+{% endblock %}

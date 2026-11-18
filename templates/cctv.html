@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Pemantauan CCTV{% endblock %}
+{% block heading %}Pemantauan CCTV{% endblock %}
+{% block sub %}{{ camera.camera_name }} · {{ camera.location }}{% endblock %}
+{% block content %}
+<div class="cctv-page">
+  <section class="panel">
+    <header class="panel-h">
+      <h2>{{ icon("cctv", 26) }} Siaran langsung</h2>
+      <div class="row gap">
+        <label class="check"><input type="checkbox" id="showRoi" checked> Tampilkan area ROI</label>
+        <span class="live" data-live>Live</span>
+      </div>
+    </header>
+    {% include "_cctv_view.html" %}
+  </section>
+
+  <aside class="col">
+    <section class="panel">
+      <header class="panel-h"><h2>{{ icon("cpu", 24) }} Hasil deteksi terakhir</h2></header>
+      <dl class="facts">
+        <div><dt>Status kamera</dt><dd data-f="cam_status">–</dd></div>
+        <div><dt>Mode deteksi</dt><dd data-f="mode">–</dd></div>
+        <div><dt>Kondisi tempat sampah</dt><dd data-f="status">–</dd></div>
+        <div><dt>Tingkat kepenuhan</dt><dd data-f="fullness">–</dd></div>
+        <div><dt>Kondisi area (ROI)</dt><dd data-f="area">–</dd></div>
+        <div><dt>Confidence tertinggi</dt><dd data-f="confidence">–</dd></div>
+        <div><dt>Update terakhir</dt><dd data-f="last_update">–</dd></div>
+      </dl>
+    </section>
+    <section class="panel">
+      <header class="panel-h"><h2>{{ icon("layers", 24) }} Objek terdeteksi</h2></header>
+      <table class="tbl compact"><thead><tr><th>Label</th><th class="num">Confidence</th></tr></thead>
+        <tbody id="boxList"><tr><td colspan="2" class="empty">Belum ada objek terdeteksi.</td></tr></tbody></table>
+      <p class="hint">Hanya objek dengan confidence di atas ambang {{ (S.confidence_threshold|float * 100)|round|int }}% yang ditampilkan. Sampah berserakan dihitung bila berada di dalam ROI.</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

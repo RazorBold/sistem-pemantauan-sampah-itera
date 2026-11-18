@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Simulasi{% endblock %}
+{% block heading %}Simulasi CCTV{% endblock %}
+{% block sub %}Uji alur deteksi, alert, dan WhatsApp tanpa kamera asli{% endblock %}
+{% block content %}
+{% if not streaming_demo %}
+<div class="flash err row gap wrap">
+  <span class="grow">CCTV sedang memakai kamera asli (<code>{{ camera.stream_url }}</code>), jadi skenario di bawah tidak ditampilkan.</span>
+  <form method="post" action="{{ url_for('simulasi_aktifkan') }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="btn sm">Alihkan ke simulasi</button></form>
+</div>
+{% endif %}
+
+<div class="sim-top">
+  <section class="panel">
+    <header class="panel-h">
+      <h2>{{ icon("cctv", 26) }} Tampilan CCTV saat ini</h2>
+      <span class="live" data-live>Live</span>
+    </header>
+    {% include "_cctv_view.html" %}
+  </section>
+
+  <section class="panel sim-ctrl">
+    <header class="panel-h"><h2>{{ icon("play", 24) }} Kendali simulasi</h2></header>
+    <div class="now">
+      <p class="muted small">Sedang tampil</p>
+      <p class="now-name" data-sim-name>{{ sim.active.name if sim.active else '–' }}</p>
+      <span class="tag" data-sim-tag>{{ SIM_LABEL.get(sim.active.condition) if sim.active else '' }}</span>
+    </div>
+    <div class="cycle" data-sim-cycle {{ 'hidden' if S.sim_mode != 'auto' }}>
+      <div class="row gap"><span class="muted small grow">Skenario berikutnya dalam</span><b data-sim-next>–</b></div>
+      <div class="meter thin"><span data-sim-bar></span></div>
+    </div>
+    <p class="mode-note" data-sim-manual {{ 'hidden' if S.sim_mode == 'auto' }}>
+      {{ icon("pause", 18) }} Putaran dijeda. Skenario ini ditampilkan terus sampai kamu memutar otomatis lagi.</p>
+    <form method="post" class="auto-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="action" value="auto">
+      <label>Ganti skenario tiap
+        <select name="sim_cycle">
+          {% for v in [10, 15, 20, 30, 45, 60] %}<option value="{{ v }}" {{ 'selected' if S.sim_cycle|int == v }}>{{ v }} detik</option>{% endfor %}
+        </select></label>
+      <button class="btn">{{ icon("play", 18) }} Putar otomatis</button>
+    </form>
+    <ol class="steps">
+      <li>Setiap skenario harus terlihat {{ S.stable_frames }} kali berturut-turut (± {{ (S.stable_frames|int * S.detection_interval|float)|round|int }} detik) sebelum dicatat.</li>
+      <li>Kondisi penuh dan berserakan memunculkan alert di layar dan WhatsApp ke petugas.</li>
+      <li>Saat kondisi kembali kosong atau bersih, alert sebelumnya otomatis ditandai selesai.</li>
+    </ol>
+  </section>
+</div>
+
+<section class="panel">
+  <header class="panel-h"><h2>{{ icon("image", 24) }} Daftar skenario</h2>
+    <span class="muted small">{{ scenarios|selectattr('is_enabled')|list|length }} dari {{ scenarios|length }} ikut putaran otomatis</span></header>
+  <div class="sim-grid">
+    {% for sc in scenarios %}
+    <article class="sim-card {{ 'off' if not sc.is_enabled }}" data-sim-id="{{ sc.id }}">
+      <div class="sim-thumb">
+        <img src="{{ url_for('sim_img', sid=sc.id) }}" alt="{{ sc.name }}" loading="lazy">
+        <span class="now-badge">Sedang tampil</span>
+      </div>
+      <div class="sim-body">
+        <h3>{{ sc.name }}</h3>
+        <div class="row gap wrap">
+          <span class="tag k-{{ sc.condition.split('_')[0] }}">{{ SIM_LABEL.get(sc.condition) }}</span>
+          {% if sc.fullness is not none %}<span class="muted small">Kepenuhan {{ sc.fullness|round|int }}%</span>{% endif %}
+          {% if not sc.is_builtin %}<span class="muted small">Unggahan</span>{% endif %}
+        </div>
+        <div class="sim-actions">
+          <form method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ sc.id }}">
+            <button class="btn sm" name="action" value="show">Tampilkan</button></form>
+          <form method="post" class="ml-auto"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ sc.id }}"><input type="hidden" name="action" value="toggle">
+            <label class="mini-switch" title="Ikut putaran otomatis">Putaran
+              <span class="switch sm"><input type="checkbox" {{ 'checked' if sc.is_enabled }} onchange="this.form.submit()"><span></span></span></label></form>
+          {% if not sc.is_builtin %}
+          <form method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ sc.id }}">
+            <button class="icon-btn sm" name="action" value="delete" aria-label="Hapus {{ sc.name }}" data-confirm="Hapus skenario {{ sc.name }}?">{{ icon("trash", 16) }}</button></form>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+
+    <form method="post" enctype="multipart/form-data" class="sim-card upload">
+      <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="action" value="upload">
+      <label class="drop">{{ icon("upload", 28) }}<span data-file-label>Pilih foto tempat sampah (JPG/PNG)</span>
+        <input type="file" name="image" accept="image/jpeg,image/png,image/webp" required></label>
+      <div class="sim-body stack">
+        <label>Nama skenario<input name="name" maxlength="80" placeholder="Tong depan Gedung C, pagi"></label>
+        <div class="row gap">
+          <label class="grow">Kondisi
+            <select name="condition">
+              {% for k in ["penuh","penuh_berserakan","sebagian","kosong","berserakan"] %}<option value="{{ k }}">{{ SIM_LABEL[k] }}</option>{% endfor %}
+            </select></label>
+          <label style="width:110px">Kepenuhan %<input type="number" name="fullness" min="0" max="100" placeholder="auto"></label>
+        </div>
+        <button class="btn">{{ icon("plus", 18) }} Tambah skenario</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

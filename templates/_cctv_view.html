@@ -1,0 +1,14 @@
+{% from "_icons.html" import icon %}<div class="cctv" id="cctv">
+  <div class="cctv-stage">
+    <div class="cctv-frame">
+      <img class="cctv-img" src="{{ url_for('video_feed') }}" alt="Siaran langsung {{ camera.camera_name }}">
+      <div class="overlay" data-overlay></div>
+    </div>
+    <div class="offline" data-offline hidden>{{ icon("plug", 36) }}<b>CCTV offline</b><span>Sistem tidak menerima gambar. Periksa kabel, jaringan, atau URL stream di Pengaturan.</span></div>
+    <button class="icon-btn fs" data-fullscreen aria-label="Layar penuh">{{ icon("expand", 20) }}</button>
+  </div>
+  <div class="cctv-bar">
+    <span><b data-f="cam_name">{{ camera.camera_name }}</b><i class="sep"></i><span data-f="cam_loc">{{ camera.location }}</span></span>
+    <span data-f="clock">–</span>
+  </div>
+</div>

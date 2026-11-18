@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="kpis" aria-label="Kondisi terkini">
+  <article class="kpi kpi-status" data-tone="neutral" id="kpiStatus">
+    <span class="kpi-ic">{{ icon("trash", 40) }}</span>
+    <div><p class="kpi-label">Status terkini</p><p class="kpi-val" data-f="status">–</p></div>
+  </article>
+  <article class="kpi">
+    <span class="kpi-ic ink">{{ icon("bin", 34) }}</span>
+    <div class="grow">
+      <p class="kpi-label">Tingkat kepenuhan</p><p class="kpi-val ink" data-f="fullness">–</p>
+      <div class="meter" role="meter" aria-label="Tingkat kepenuhan" aria-valuemin="0" aria-valuemax="100" id="fullMeter"><span></span></div>
+    </div>
+  </article>
+  <article class="kpi" id="kpiArea" data-tone="neutral">
+    <span class="kpi-ic">{{ icon("alert", 44) }}</span>
+    <div><p class="kpi-label">Kondisi area</p><p class="kpi-val" data-f="area">–</p></div>
+  </article>
+  <article class="kpi kpi-wa" id="kpiWa">
+    <span class="kpi-ic wa">{{ icon("wa", 44) }}</span>
+    <div class="grow"><p class="kpi-label">Notifikasi WhatsApp</p><p class="kpi-val" data-f="wa">–</p></div>
+    <label class="switch"><input type="checkbox" data-notify-toggle aria-label="Notifikasi WhatsApp otomatis"><span></span></label>
+  </article>
+</section>
+
+<div class="dash-grid">
+    <section class="panel a-cctv">
+      <header class="panel-h">
+        <h2>{{ icon("cctv", 26) }} Pemantauan CCTV real-time</h2>
+        <span class="live" data-live>Live</span>
+      </header>
+      {% include "_cctv_view.html" %}
+    </section>
+
+    <section class="panel a-class">
+      <header class="panel-h"><h2>{{ icon("layers", 24) }} Klasifikasi kondisi sampah</h2></header>
+      <div class="classes" id="classes">
+        {% for k in ["penuh","kosong","berserakan"] %}
+        <figure class="cls" data-cls="{{ k }}">
+          <img src="{{ url_for('static', filename='img/demo-' ~ k ~ '.jpg') }}" alt="Contoh kondisi {{ LABEL[k]|lower }}" loading="lazy">
+          <figcaption>{{ LABEL[k] }} <span class="radio" aria-hidden="true"></span></figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel a-wa">
+      <header class="panel-h"><h2><span class="wa-c">{{ icon("wa", 28) }}</span> Notifikasi WhatsApp</h2>
+        <span class="muted small">Terakhir terkirim: <b data-f="last_sent">–</b></span></header>
+      <div class="wa-rows">
+        <label class="wa-row">Kirim notifikasi otomatis ke WhatsApp
+          <span class="switch"><input type="checkbox" data-notify-toggle><span></span></span></label>
+        <div class="wa-row">
+          <span class="row-l">{{ icon("users", 20) }} Penerima</span>
+          <span class="chip" data-f="recipient">Belum ada penerima</span>
+          <a class="icon-btn sm" href="{{ url_for('notifikasi') }}" aria-label="Kelola penerima">{{ icon("pencil", 18) }}</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel a-stats">
+      <header class="panel-h"><h2>{{ icon("chart", 24) }} Statistik deteksi <span class="muted">(hari ini)</span></h2></header>
+      <div class="stats3">
+        <div class="stat t-red">{{ icon("trash", 26) }}<p>Penuh</p><b><span data-f="today_penuh">0</span> kali</b></div>
+        <div class="stat t-amber">{{ icon("alert", 26) }}<p>Berserakan</p><b><span data-f="today_berserakan">0</span> kali</b></div>
+        <div class="stat t-green">{{ icon("check", 26) }}<p>Kosong</p><b><span data-f="today_kosong">0</span> kali</b></div>
+      </div>
+    </section>
+
+    <section class="panel a-trend">
+      <header class="panel-h"><h2>{{ icon("trend", 24) }} Tren kepenuhan sampah</h2>
+        <div class="seg" role="group" aria-label="Rentang waktu">
+          <button data-hours="6" class="on">6 jam</button><button data-hours="24">24 jam</button>
+        </div>
+      </header>
+      <div class="chart-box"><canvas id="trendChart" aria-label="Grafik tren kepenuhan"></canvas>
+        <p class="empty" data-trend-empty hidden>Grafik terisi otomatis setelah sistem mencatat kepenuhan (sampel setiap 30 detik).</p></div>
+    </section>
+
+    <section class="panel a-alerts">
+      <header class="panel-h"><h2>{{ icon("calendar", 24) }} Riwayat alert terbaru</h2>
+        <a class="link" href="{{ url_for('riwayat') }}">Lihat semua {{ icon("arrow", 16) }}</a></header>
+      <ul class="alerts" id="alerts"><li class="empty">Belum ada kejadian yang tercatat.</li></ul>
+    </section>
+</div>
+{% endblock %}

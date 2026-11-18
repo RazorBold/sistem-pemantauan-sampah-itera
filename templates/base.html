@@ -1,0 +1,75 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>{% block title %}Dashboard{% endblock %} · Pemantauan Sampah ITERA</title>
+<link rel="icon" href="{{ url_for('static', filename='img/logo-mark.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="page-{{ page }}">
+<a class="skip" href="#main">Langsung ke konten</a>
+<div class="shell">
+  <aside class="side" id="side">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ url_for('static', filename='img/logo-mark.png') }}" alt="" width="54" height="54">
+      <span><b>ITERA</b><small>Institut Teknologi<br>Sumatera</small></span>
+    </a>
+    <nav class="nav" aria-label="Menu utama">
+      {% set items = [("dashboard","dashboard","home","Dashboard"),("cctv","cctv","camera","Pemantauan CCTV"),
+                      ("riwayat","riwayat","clock","Riwayat Deteksi"),("notifikasi","notifikasi","wa","Notifikasi"),
+                      ("laporan","laporan","chart","Laporan"),("simulasi","simulasi","play","Simulasi"),
+                      ("pengaturan","pengaturan","gear","Pengaturan")] %}
+      {% for key, ep, ic, label in items %}
+      <a href="{{ url_for(ep) }}" class="{{ 'on' if page == key }}" {% if page == key %}aria-current="page"{% endif %}>
+        <span class="nav-ic">{{ icon(ic, 22) }}{% if key == 'notifikasi' %}<i class="dot" data-pending hidden></i>{% endif %}</span>{{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="side-campus" aria-hidden="true"></div>
+  </aside>
+  <div class="scrim" data-close-side></div>
+
+  <div class="main-col">
+    <header class="top">
+      <button class="icon-btn only-m" data-open-side aria-label="Buka menu">{{ icon("menu", 22) }}</button>
+      <div class="top-title">
+        <h1>{% block heading %}Sistem Pemantauan Sampah Cerdas{% endblock %}</h1>
+        <p>{% block sub %}Kampus ITERA{% endblock %}</p>
+      </div>
+      <div class="top-actions">
+        <a class="icon-btn bell" href="{{ url_for('riwayat', status='menunggu') }}" aria-label="Kejadian menunggu penanganan">
+          {{ icon("bell", 24) }}<i class="dot" data-pending hidden></i>
+        </a>
+        <details class="usermenu">
+          <summary><span class="avatar">{{ icon("user", 22) }}</span><span class="uname">{{ user.name if user else '' }}</span>{{ icon("chev", 18) }}</summary>
+          <div class="menu-pop">
+            <a href="{{ url_for('pengaturan') }}#akun">{{ icon("user", 18) }} Akun saya</a>
+            <form method="post" action="{{ url_for('logout') }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button type="submit">{{ icon("logout", 18) }} Keluar</button>
+            </form>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    {% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}
+    <div class="flashes">{% for cat, m in msgs %}<div class="flash {{ cat }}" role="status">{{ m }}</div>{% endfor %}</div>
+    {% endif %}{% endwith %}
+
+    <main id="main" class="content">{% block content %}{% endblock %}</main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="alert-stack" id="alertStack" aria-live="assertive"></div>
+<script>window.APP = {csrf: "{{ csrf }}", page: "{{ page }}", frameUrl: "{{ url_for('video_feed') }}"};</script>
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

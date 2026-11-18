@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Data lokal (database berisi API key & riwayat, snapshot, foto unggahan)
+data/*.db
+data/*.db-*
+data/snapshots/*
+data/sim/*
+!data/snapshots/.gitkeep
+!data/sim/.gitkeep
+
+# Model YOLO (besar) – taruh manual di models/
+models/*.pt
+models/*.onnx
+!models/.gitkeep
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# file kosong sementara
+/a

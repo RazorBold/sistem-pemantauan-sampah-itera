@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Pengaturan{% endblock %}
+{% block heading %}Pengaturan{% endblock %}
+{% block sub %}Kamera, parameter AI, WhatsApp, dan akun{% endblock %}
+{% block content %}
+<nav class="tabs" aria-label="Bagian pengaturan">
+  <a href="#kamera">Kamera</a><a href="#ai">Deteksi AI</a><a href="#whatsapp">WhatsApp API</a><a href="#integrasi">Integrasi AI eksternal</a><a href="#akun">Akun</a>
+</nav>
+
+<section class="panel" id="kamera">
+  <header class="panel-h"><h2>{{ icon("camera", 24) }} Kamera CCTV</h2>
+    <span class="st {{ 'ok' if camera.status=='online' else 'bad' }}">{{ 'Online' if camera.status=='online' else 'Offline' }}</span></header>
+  <form method="post" class="grid-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="section" value="kamera">
+    <label>ID / nama kamera<input name="camera_name" value="{{ camera.camera_name }}" required></label>
+    <label>Lokasi pemantauan<input name="location" value="{{ camera.location }}" required></label>
+    <label class="span2">URL streaming
+      <input name="stream_url" value="{{ camera.stream_url }}" placeholder="rtsp://user:pass@192.168.1.10:554/stream1">
+      <small>Isi <code>demo</code> untuk mode simulasi, <code>0</code> untuk webcam laptop, alamat <code>rtsp://</code> / <code>http://</code> untuk IP camera, path file video (.mp4), atau <code>eksternal</code> bila deteksi dikirim oleh <code>detector_client.py</code>.</small></label>
+    <p class="hint">Foto dan urutan skenario untuk mode <code>demo</code> diatur di menu <a class="link" href="{{ url_for('simulasi') }}">Simulasi</a>.</p>
+    <div class="span2"><button class="btn">Simpan kamera</button></div>
+  </form>
+</section>
+
+<section class="panel" id="ai">
+  <header class="panel-h"><h2>{{ icon("cpu", 24) }} Parameter deteksi AI</h2>
+    <span class="muted small">{% if detector.model %}Model YOLO aktif{% else %}{{ detector.error or 'Model belum dimuat' }}{% endif %}</span></header>
+  <form method="post" class="grid-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="section" value="ai">
+    <label>Confidence threshold<input type="number" name="confidence_threshold" min="0.05" max="0.99" step="0.01" value="{{ S.confidence_threshold }}"><small>Batas minimum keyakinan model (0–1).</small></label>
+    <label>Interval deteksi (detik)<input type="number" name="detection_interval" min="0.5" step="0.5" value="{{ S.detection_interval }}"><small>Jarak antar pengambilan frame untuk inferensi.</small></label>
+    <label>Ambang penuh (%)<input type="number" name="full_threshold" min="1" max="100" value="{{ S.full_threshold }}"><small>Kepenuhan ≥ nilai ini dianggap penuh.</small></label>
+    <label>Ambang kosong (%)<input type="number" name="empty_threshold" min="0" max="99" value="{{ S.empty_threshold }}"><small>Kepenuhan ≤ nilai ini dianggap kosong.</small></label>
+    <label>Frame stabil<input type="number" name="stable_frames" min="1" max="20" value="{{ S.stable_frames }}"><small>Kondisi harus sama berturut-turut sebanyak ini sebelum dicatat (mengurangi false alert).</small></label>
+    <label>Jeda alert berulang (menit)<input type="number" name="alert_cooldown" min="0" step="0.5" value="{{ (S.alert_cooldown|float / 60)|round(1) }}"><small>Cooldown agar petugas tidak menerima spam.</small></label>
+    <fieldset class="span2 roi-field">
+      <legend>Region of Interest (ROI) sampah berserakan, dalam % lebar/tinggi gambar</legend>
+      <div class="roi-grid">
+        {% for k, l, v in [("x1","Kiri",roi[0]),("y1","Atas",roi[1]),("x2","Kanan",roi[2]),("y2","Bawah",roi[3])] %}
+        <label>{{ l }}<input type="number" name="roi_{{ k }}" min="0" max="100" step="1" value="{{ (v*100)|round|int }}" data-roi="{{ k }}"></label>
+        {% endfor %}
+      </div>
+      <div class="roi-preview"><img src="{{ url_for('api_frame') }}" alt="Frame kamera saat ini" onerror="this.style.visibility='hidden'"><span data-roi-box></span></div>
+    </fieldset>
+    <label class="span2">Path model YOLO<input name="model_path" value="{{ S.model_path }}"><small>Relatif terhadap folder aplikasi. Nama kelas yang dikenali: penuh/full, kosong/empty, berserakan/scattered/litter, sebagian/bin.</small></label>
+    <div class="span2"><button class="btn">Simpan parameter</button></div>
+  </form>
+</section>
+
+<section class="panel" id="whatsapp">
+  <header class="panel-h"><h2>{{ icon("wa", 24) }} Konfigurasi WhatsApp API</h2></header>
+  <form method="post" class="grid-form" data-provider-form>
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="section" value="whatsapp">
+    <label class="span2">Penyedia
+      <select name="wa_provider" data-provider>
+        <option value="simulasi" {{ 'selected' if S.wa_provider=='simulasi' }}>Simulasi (tidak mengirim, untuk uji lokal)</option>
+        <option value="cloud" {{ 'selected' if S.wa_provider=='cloud' }}>WhatsApp Business Cloud API (Meta)</option>
+        <option value="fonnte" {{ 'selected' if S.wa_provider=='fonnte' }}>Fonnte</option>
+      </select></label>
+    <label data-for="cloud">Access token<input type="password" name="wa_cloud_token" value="{{ S.wa_cloud_token }}" autocomplete="off"></label>
+    <label data-for="cloud">Phone Number ID<input name="wa_phone_number_id" value="{{ S.wa_phone_number_id }}"></label>
+    <label data-for="cloud">Versi Graph API<input name="wa_api_version" value="{{ S.wa_api_version }}"></label>
+    <label data-for="cloud">Webhook verify token<input name="wa_verify_token" value="{{ S.wa_verify_token }}"><small>Callback URL: <code>{{ S.base_url }}/webhook/whatsapp</code> (butuh URL publik, mis. ngrok).</small></label>
+    <label data-for="fonnte" class="span2">Token Fonnte<input type="password" name="fonnte_token" value="{{ S.fonnte_token }}" autocomplete="off"></label>
+    <label class="span2">Alamat dashboard (untuk link konfirmasi petugas)<input name="base_url" value="{{ S.base_url }}"><small>Gunakan IP laptop di jaringan kampus (mis. http://192.168.1.5:5000) agar link bisa dibuka dari HP petugas.</small></label>
+    <div class="span2 row gap"><button class="btn">Simpan konfigurasi</button><a class="btn ghost" href="{{ url_for('notifikasi') }}">Kirim pesan uji</a></div>
+  </form>
+</section>
+
+<section class="panel" id="integrasi">
+  <header class="panel-h"><h2>{{ icon("plug", 24) }} Integrasi AI eksternal</h2></header>
+  <p class="hint">Jika model dijalankan di skrip/perangkat lain, kirim hasil deteksi ke <code>POST {{ S.base_url }}/api/detections</code> dengan header <code>X-API-Key</code>. Contoh lengkap ada di <code>detector_client.py</code>.</p>
+  <div class="row gap wrap"><code class="key">{{ S.ingest_api_key }}</code>
+    <form method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="section" value="apikey">
+      <button class="btn ghost sm" data-confirm="Buat API key baru? Key lama langsung tidak berlaku.">Buat key baru</button></form></div>
+</section>
+
+<section class="panel" id="akun">
+  <header class="panel-h"><h2>{{ icon("user", 24) }} Akun administrator</h2></header>
+  <form method="post" class="grid-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="section" value="akun">
+    <label>Nama tampilan<input name="name" value="{{ user.name }}"></label>
+    <label>Username<input value="{{ user.username }}" disabled></label>
+    <label>Password lama<input type="password" name="old" autocomplete="current-password" required></label>
+    <label>Password baru<input type="password" name="new" minlength="6" autocomplete="new-password" required></label>
+    <div class="span2"><button class="btn">Perbarui akun</button></div>
+  </form>
+</section>
+{% endblock %}
