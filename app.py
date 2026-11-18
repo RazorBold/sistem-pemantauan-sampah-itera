@@ -37,6 +37,7 @@ LABEL = {"penuh": "Penuh", "kosong": "Kosong", "berserakan": "Berserakan",
          "sebagian": "Terisi sebagian", "bersih": "Bersih", "offline": "CCTV Offline"}
 
 DEFAULT_SETTINGS = {
+    "WA":"9GBA-Z22Z",
     "confidence_threshold": "0.50",   # batas minimum keyakinan model
     "full_threshold": "80",           # % kepenuhan => penuh
     "empty_threshold": "15",          # % kepenuhan => kosong
