@@ -1,0 +1,7 @@
+path: C:/Users/telkom/Music/TA_JOKI/dataset
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: box_sampah
+  1: sampah_plastik

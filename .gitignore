@@ -17,6 +17,8 @@ data/sim/*
 models/*.pt
 models/*.onnx
 !models/.gitkeep
+# model hasil training sendiri (23 MB) ikut disimpan agar notebook bisa langsung dipakai di laptop lain
+!models/best.pt
 
 # Editor / OS
 .vscode/
@@ -30,3 +32,17 @@ Thumbs.db
 # Output notebook deteksi
 notebook_output/
 .ipynb_checkpoints/
+
+# Foto mentah & dataset training (besar, simpan di Drive/flashdisk)
+samplefoto/
+dataset/*
+!dataset/data.yaml
+!dataset/images/
+dataset/images/*
+!dataset/images/test/
+!dataset/labels/
+dataset/labels/*
+!dataset/labels/test/
+dataset/labels/*.cache
+runs/
+weights/

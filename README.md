@@ -79,19 +79,36 @@ untuk menandai sampah sudah ditangani, tanpa perlu login. Isi **Alamat dashboard
 
 Notebook terpisah dari web untuk menguji alur deteksi sesuai diagram alir penelitian:
 webcam/folder → input citra → preprocessing → resize & normalisasi → backbone → neck (fusi fitur) →
-detection head → bounding box + kelas + confidence → NMS → valid? → klasifikasi (kosong/berserakan/penuh) →
-tampil di web → simpan data → WhatsApp.
+detection head → bounding box + kelas + confidence + mask → NMS → valid? → hitung level → kategori
+(kosong/sebagian/penuh/berserakan) → tampil di web → simpan data → WhatsApp.
+
+Model: **YOLOv8s-seg** yang dilatih sendiri (`models/best.pt`) dengan 2 kelas hasil pelabelan Label Studio:
+`box_sampah` (poligon bak bata) dan `sampah_plastik` (kotak).
+
+- **Level (%)** = luas bak yang tertutup plastik ÷ luas bak.
+- Plastik di luar bak = **berserakan**.
 
 ```bash
 pip install ultralytics notebook matplotlib pandas
 jupyter notebook deteksi_sampah.ipynb
 ```
 
-- Gambar uji: `static/img/simulasi/<penuh|kosong|berserakan>/` (nama folder = label asli untuk evaluasi).
-- Mode `zero-shot` (bawaan, belum ada model terlatih): YOLO-World + CLIP. Unduhan pertama sekitar 400 MB.
-- Mode `custom`: otomatis aktif jika `models/best.pt` (kelas penuh/kosong/berserakan) tersedia.
+- Foto uji: `dataset/images/test/` (40 foto, tidak dipakai saat training), lengkap dengan labelnya untuk evaluasi.
+- Hasil uji saat ini:
+  - Deteksi: box mAP50 0,975 dan mask mAP50 0,975.
+  - Level: selisih rata-rata 1,8 poin persen dibanding level dari label asli.
+  - Status bak benar 87,5%, berserakan benar 90%.
 - Hasil disimpan di `notebook_output/` (CSV monitoring + gambar beranotasi).
 - `KIRIM_KE_WEB = True` mengirim hasil ke dashboard (set URL streaming CCTV = `eksternal`).
+
+### Melatih ulang model (misalnya setelah menambah foto berlabel)
+
+1. Taruh ekspor Label Studio (format YOLO: `images/`, `labels/`, `classes.txt`) di `samplefoto/`.
+2. `python siapkan_dataset.py`. Langkah ini memutar dan mengecilkan foto, menyeragamkan label, lalu membagi train/val/test per blok waktu.
+3. `python latih_model.py`. GPU dipakai otomatis; di RTX 3050 Ti makan waktu sekitar 25 menit. Hasilnya disalin ke `models/best.pt`.
+
+GPU NVIDIA di Windows butuh torch versi CUDA:
+`pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126`
 
 ## Struktur
 
