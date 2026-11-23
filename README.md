@@ -112,6 +112,16 @@ jupyter notebook deteksi_sampah.ipynb
 - Hasil disimpan di `notebook_output/` (CSV monitoring + gambar beranotasi).
 - `KIRIM_KE_WEB = True` mengirim hasil ke dashboard (set URL streaming CCTV = `eksternal`).
 
+### Menjalankan di Google Colab
+
+1. Siapkan paket `TA_Sampah_Colab.zip`. Isinya: notebook, model, dataset lengkap, dan skrip training.
+2. Ekstrak zip, lalu unggah folder `TA_Sampah` ke **Google Drive → My Drive**.
+3. Buka `deteksi_sampah.ipynb` dengan Google Colaboratory.
+4. Pilih **Runtime → Change runtime type → T4 GPU**, lalu **Run all**.
+
+Sel "0. Khusus Google Colab" akan menyambungkan Drive dan memasang ultralytics secara otomatis.
+Mode webcam dan kirim ke web tidak bisa dipakai dari Colab.
+
 ### Melatih ulang model (misalnya setelah menambah foto berlabel)
 
 1. Taruh ekspor Label Studio (format YOLO: `images/`, `labels/`, `classes.txt`) di `samplefoto/`.

@@ -44,5 +44,9 @@ dataset/images/*
 dataset/labels/*
 !dataset/labels/test/
 dataset/labels/*.cache
+dataset/data_lokal.yaml
 runs/
 weights/
+
+# paket untuk Google Colab (dibuat ulang kapan saja)
+TA_Sampah_Colab.zip

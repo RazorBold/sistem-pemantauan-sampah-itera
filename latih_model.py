@@ -21,15 +21,29 @@ BATCH = 8          # cocok untuk GPU 4 GB; turunkan ke 4 jika "out of memory"
 MODEL_AWAL = "yolov8s-seg.pt"   # model pralatih COCO (diunduh otomatis ~23 MB)
 
 
+def data_lokal():
+    """Salin data.yaml dengan alamat folder dataset laptop/Colab yang sedang dipakai
+    (data.yaml asli berisi alamat folder dari laptop tempat dataset dibuat)."""
+    import yaml
+    with open(DATA, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    cfg["path"] = os.path.join(BASE, "dataset").replace(os.sep, "/")
+    out = os.path.join(BASE, "dataset", "data_lokal.yaml")
+    with open(out, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, allow_unicode=True)
+    return out
+
+
 def main():
     if not os.path.isfile(DATA):
         raise SystemExit("dataset/data.yaml belum ada. Jalankan dulu: python siapkan_dataset.py")
+    data = data_lokal()
     device = 0 if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     print("Perangkat training:", torch.cuda.get_device_name(0) if device == 0 else device)
 
     model = YOLO(os.path.join(BASE, "models", MODEL_AWAL) if os.path.isfile(
         os.path.join(BASE, "models", MODEL_AWAL)) else MODEL_AWAL)
-    model.train(data=DATA, epochs=EPOCHS, imgsz=IMGSZ, batch=BATCH, device=device,
+    model.train(data=data, epochs=EPOCHS, imgsz=IMGSZ, batch=BATCH, device=device,
                 patience=25, workers=2, seed=0, deterministic=False,
                 # mask tiap objek disimpan terpisah. Bawaan (True) membuat mask bak "bolong" di posisi
                 # plastik, karena mask kecil menimpa mask besar yang tumpang-tindih
@@ -44,7 +58,7 @@ def main():
 
     # Evaluasi jujur pada data UJI (tidak pernah dilihat saat training)
     m = YOLO(os.path.join(BASE, "models", "best.pt"))
-    r = m.val(data=DATA, split="test", imgsz=IMGSZ, batch=BATCH, device=device, overlap_mask=False,
+    r = m.val(data=data, split="test", imgsz=IMGSZ, batch=BATCH, device=device, overlap_mask=False,
               project=os.path.join(BASE, "runs"), name="sampah_seg_test", exist_ok=True, verbose=True)
     print(f"\nTEST  box mAP50={r.box.map50:.3f}  mAP50-95={r.box.map:.3f}  "
           f"mask mAP50={r.seg.map50:.3f}  P={r.box.mp:.3f}  R={r.box.mr:.3f}")
