@@ -26,6 +26,7 @@
       <p class="muted small">Sedang tampil</p>
       <p class="now-name" data-sim-name>{{ sim.active.name if sim.active else '–' }}</p>
       <span class="tag" data-sim-tag>{{ SIM_LABEL.get(sim.active.condition) if sim.active else '' }}</span>
+      <p class="sim-ai-error" data-sim-ai-error {{ 'hidden' if not sim.ai_error }}>{{ sim.ai_error or '' }}</p>
     </div>
     <div class="cycle" data-sim-cycle {{ 'hidden' if S.sim_mode != 'auto' }}>
       <div class="row gap"><span class="muted small grow">Skenario berikutnya dalam</span><b data-sim-next>–</b></div>
@@ -63,7 +64,8 @@
         <h3>{{ sc.name }}</h3>
         <div class="row gap wrap">
           <span class="tag k-{{ sc.condition.split('_')[0] }}">{{ SIM_LABEL.get(sc.condition) }}</span>
-          {% if sc.fullness is not none %}<span class="muted small">Kepenuhan {{ sc.fullness|round|int }}%</span>{% endif %}
+          {% if sc.condition == 'ai' %}<span class="muted small">Kotak &amp; level dari model</span>
+          {% elif sc.fullness is not none %}<span class="muted small">Kepenuhan {{ sc.fullness|round|int }}%</span>{% endif %}
           {% if not sc.is_builtin %}<span class="muted small">Unggahan</span>{% endif %}
         </div>
         <div class="sim-actions">
@@ -90,9 +92,10 @@
         <div class="row gap">
           <label class="grow">Kondisi
             <select name="condition">
-              {% for k in ["penuh","penuh_berserakan","sebagian","kosong","berserakan"] %}<option value="{{ k }}">{{ SIM_LABEL[k] }}</option>{% endfor %}
+              {% for k in ["ai","penuh","penuh_berserakan","sebagian","kosong","berserakan"] %}<option value="{{ k }}">{{ SIM_LABEL[k] }}</option>{% endfor %}
             </select></label>
-          <label style="width:110px">Kepenuhan %<input type="number" name="fullness" min="0" max="100" placeholder="auto"></label>
+          <label style="width:110px">Kepenuhan %<input type="number" name="fullness" min="0" max="100" placeholder="auto"
+            title="Diabaikan untuk Deteksi AI: level dihitung model"></label>
         </div>
         <button class="btn">{{ icon("plus", 18) }} Tambah skenario</button>
       </div>

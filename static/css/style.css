@@ -219,6 +219,14 @@ button, input, select { font: inherit; color: inherit; }
 .bbox.below b { bottom: auto; top: 100%; margin: 4px 0 0; }
 .bbox.litter { border-style: dashed; }
 .bbox.tag-right b { left: auto; right: -2px; }
+/* model bak + plastik: poligon bak, plastik di dalam bak kotak tipis tanpa label */
+.overlay .poly { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.overlay .poly polygon { fill: rgba(47, 191, 107, .10); stroke: #2fbf6b; stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.overlay .poly.bad polygon { fill: rgba(194, 32, 41, .10); stroke: var(--red-600); }
+.bbox.ghost { border-color: transparent; }
+.bbox.plastik { border: 1.5px solid rgba(47, 191, 107, .9); border-radius: 3px; }
+.tag.k-ai, .tag.k-plastik { background: var(--green-soft); color: #146b39; }
+.sim-ai-error { margin: 8px 0 0; font-size: 13px; color: #8d5c00; background: var(--amber-soft); padding: 6px 10px; border-radius: 8px; }
 .roi { position: absolute; border: 1.5px dashed rgba(255, 214, 102, .85); background: rgba(255, 214, 102, .06); }
 .roi i { position: absolute; right: 6px; top: 4px; font-size: 11.5px; font-style: normal; color: #ffe6a3; text-shadow: 0 1px 2px #000; }
 .offline {

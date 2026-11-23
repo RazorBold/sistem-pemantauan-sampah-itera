@@ -33,7 +33,18 @@ Ingin mencoba halaman Laporan dengan data 14 hari? Jalankan:
 
 ### Menu Simulasi
 
-Saat URL streaming = `demo`, CCTV menampilkan foto-foto di menu **Simulasi**:
+Saat URL streaming = `demo`, CCTV menampilkan foto-foto di menu **Simulasi**.
+
+Skenario **Deteksi AI** memakai foto bak bata ITERA, dan hasilnya dihitung langsung oleh model `models/best.pt` (sama dengan notebook):
+- poligon bak
+- plastik di dalam bak (kotak hijau tipis)
+- plastik di luar bak (berserakan)
+- level = % luas bak yang tertutup plastik
+
+Status bak ditentukan dari level dan ambang di Pengaturan (bawaan: penuh ≥ 50%, kosong ≤ 10%). Foto unggahan juga bisa
+diberi kondisi "Deteksi AI". Skenario tong umum yang lama tetap ada, tetapi tidak ikut putaran (bisa dinyalakan lagi).
+
+Fitur menu Simulasi:
 - **Putar otomatis**: ganti skenario setiap 10–60 detik (penuh, kosong, berserakan, cahaya redup, CCTV offline).
 - **Tampilkan**: kunci satu skenario untuk demo/uji tertentu.
 - **Tambah skenario**: unggah foto sendiri, lalu pilih kondisi dan kepenuhannya. Kotak deteksi dibuat otomatis sesuai kondisi.

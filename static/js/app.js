@@ -3,7 +3,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const APP = window.APP || {};
-  const LABEL = { penuh: "Penuh", kosong: "Kosong", berserakan: "Berserakan", sebagian: "Terisi sebagian", bersih: "Bersih", offline: "CCTV offline" };
+  const LABEL = { penuh: "Penuh", kosong: "Kosong", berserakan: "Berserakan", sebagian: "Terisi sebagian", bersih: "Bersih", offline: "CCTV offline", plastik: "Plastik di bak" };
   const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
   const svg = (p, s = 22) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const IC = {
@@ -98,11 +98,20 @@
     }
     if (st.online) for (const b of st.boxes || []) {
       const [x1, y1, x2, y2] = b.box;
+      const pos = `left:${x1 * 100}%;top:${y1 * 100}%;width:${(x2 - x1) * 100}%;height:${(y2 - y1) * 100}%`;
+      if (b.kind === "plastik") { html += `<div class="bbox plastik" style="${pos}"></div>`; continue; }
       const bad = b.kind === "penuh" || b.kind === "berserakan";
       const below = y1 < 0.12;
+      if (b.poly) {
+        // bak dari model segmentasi: gambar garis keliling (poligon), label menampilkan level
+        const pts = b.poly.map(([x, y]) => `${x * 100},${y * 100}`).join(" ");
+        html += `<svg class="poly ${bad ? "bad" : ""}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="${pts}"/></svg>`;
+        html += `<div class="bbox ghost ${bad ? "" : "ok"} ${below ? "below" : ""}" style="${pos}"><b>${esc(`Bak ${(LABEL[b.kind] || b.kind).toLowerCase()} · level ${Math.round(b.level)}%`)}</b></div>`;
+        continue;
+      }
       const txt = b.kind === "penuh" ? `Sampah Penuh (${st.fullness != null ? Math.round(st.fullness) : Math.round(b.conf * 100)}%)`
         : `Sampah ${LABEL[b.kind] || b.kind} (${Math.round(b.conf * 100)}%)`;
-      html += `<div class="bbox ${bad ? "" : "ok"} ${b.kind === "berserakan" ? "litter" : ""} ${below ? "below" : ""}" style="left:${x1 * 100}%;top:${y1 * 100}%;width:${(x2 - x1) * 100}%;height:${(y2 - y1) * 100}%"><b>${esc(txt)}</b></div>`;
+      html += `<div class="bbox ${bad ? "" : "ok"} ${b.kind === "berserakan" ? "litter" : ""} ${below ? "below" : ""}" style="${pos}"><b>${esc(txt)}</b></div>`;
     }
     ov.innerHTML = html;
     // label berserakan cukup satu (pada kotak paling kanan) agar tidak menutupi tong sampah
@@ -158,12 +167,15 @@
 
     // halaman CCTV
     setF("cam_status", st.online ? "Online" : "Offline");
-    setF("mode", { simulasi: "Simulasi (demo)", yolo: "YOLO", eksternal: "AI eksternal", "kamera (tanpa model)": "Kamera tanpa model" }[st.mode] || st.mode);
+    setF("mode", { simulasi: "Simulasi (demo)", "simulasi + AI": "Simulasi + model AI", yolo: "YOLO", eksternal: "AI eksternal", "kamera (tanpa model)": "Kamera tanpa model" }[st.mode] || st.mode);
     setF("confidence", st.confidence != null ? `${Math.round(st.confidence * 100)}%` : "–");
     setF("last_update", st.last_update ? fullDate(parseTs(st.last_update)) : "–");
     const bl = $("#boxList");
     if (bl) bl.innerHTML = st.online && st.boxes.length
-      ? st.boxes.map((b) => `<tr><td><span class="tag k-${b.kind}">${esc(LABEL[b.kind] || b.kind)}</span></td><td class="num">${Math.round(b.conf * 100)}%</td></tr>`).join("")
+      ? Object.values(st.boxes.reduce((g, b) => {   // kelompokkan per jenis: banyak plastik cukup satu baris
+          const k = b.poly ? "bak" : b.kind;
+          (g[k] ||= { b, n: 0, conf: 0 }).n++; g[k].conf = Math.max(g[k].conf, b.conf); return g;
+        }, {})).map(({ b, n, conf }) => `<tr><td><span class="tag k-${b.kind}">${esc(b.poly ? `Bak (${(LABEL[b.kind] || b.kind).toLowerCase()}, level ${Math.round(b.level)}%)` : LABEL[b.kind] || b.kind)}</span>${n > 1 ? ` <span class="muted small">× ${n}</span>` : ""}</td><td class="num">${Math.round(conf * 100)}%</td></tr>`).join("")
       : `<tr><td colspan="2" class="empty">${st.online ? "Belum ada objek terdeteksi." : "Kamera offline."}</td></tr>`;
 
     renderAlerts(st.alerts);
@@ -231,7 +243,7 @@
   if (APP.page && APP.page !== "None") { poll(); setInterval(poll, 2500); }
 
   /* ---------- simulasi */
-  const SIM_LABEL = { penuh: "Penuh", sebagian: "Terisi sebagian", kosong: "Kosong", berserakan: "Berserakan", penuh_berserakan: "Penuh & berserakan", offline: "CCTV offline" };
+  const SIM_LABEL = { penuh: "Penuh", sebagian: "Terisi sebagian", kosong: "Kosong", berserakan: "Berserakan", penuh_berserakan: "Penuh & berserakan", offline: "CCTV offline", ai: "Deteksi AI" };
   function renderSim(st) {
     if (APP.page !== "simulasi") return;
     const sim = st.sim;
@@ -239,6 +251,8 @@
     $("[data-sim-name]") && ($("[data-sim-name]").textContent = a ? a.name : "Simulasi tidak aktif");
     const tag = $("[data-sim-tag]");
     if (tag) { tag.textContent = a ? SIM_LABEL[a.condition] : ""; tag.className = "tag" + (a ? " k-" + a.condition.split("_")[0] : ""); }
+    const aiErr = $("[data-sim-ai-error]");
+    if (aiErr) { aiErr.textContent = sim?.ai_error || ""; aiErr.hidden = !sim?.ai_error; }
     const auto = sim && sim.mode === "auto";
     $("[data-sim-cycle]")?.toggleAttribute("hidden", !auto);
     $("[data-sim-manual]")?.toggleAttribute("hidden", !sim || auto);

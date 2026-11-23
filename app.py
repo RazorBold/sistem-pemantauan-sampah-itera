@@ -91,13 +91,13 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or "ganti-secret-key-ini
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
 
 LABEL = {"penuh": "Penuh", "kosong": "Kosong", "berserakan": "Berserakan",
-         "sebagian": "Terisi sebagian", "bersih": "Bersih", "offline": "CCTV Offline"}
+         "sebagian": "Terisi sebagian", "bersih": "Bersih", "offline": "CCTV Offline", "plastik": "Plastik di bak"}
 
 DEFAULT_SETTINGS = {
     "WA":"9GBA-Z22Z",
-    "confidence_threshold": "0.50",   # batas minimum keyakinan model
-    "full_threshold": "80",           # % kepenuhan => penuh
-    "empty_threshold": "15",          # % kepenuhan => kosong
+    "confidence_threshold": "0.35",   # batas minimum keyakinan model (sama dengan notebook)
+    "full_threshold": "50",           # % level (luas bak tertutup plastik) => penuh
+    "empty_threshold": "10",          # % level => kosong
     "detection_interval": "2",        # detik antar inferensi
     "alert_cooldown": "300",          # detik jeda alert berulang
     "stable_frames": "3",             # jumlah inferensi konsisten sebelum dicatat
@@ -199,11 +199,20 @@ def init_db():
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO system_settings(setting_key,setting_value,updated_at) VALUES(?,?,?)",
                     (k, v, ts))
-    if not con.execute("SELECT 1 FROM sim_images").fetchone():
-        for i, (name, path, cond, full, boxes) in enumerate(BUILTIN_SCENARIOS):
+    for i, (name, path, cond, full, boxes) in enumerate(BUILTIN_SCENARIOS):
+        if not con.execute("SELECT 1 FROM sim_images WHERE file_path=?", (path,)).fetchone():
             con.execute("INSERT INTO sim_images(name,file_path,condition,fullness,boxes,is_enabled,is_builtin,"
                         "sort_order,created_at) VALUES(?,?,?,?,?,?,1,?,?)",
                         (name, path, cond, full, json.dumps(boxes), 0 if cond == "offline" else 1, i, ts))
+    if not con.execute("SELECT 1 FROM system_settings WHERE setting_key='skema_v2'").fetchone():
+        # Sekali jalan saat beralih ke model bak + plastik: ambang mengikuti notebook (hanya jika masih nilai lama),
+        # skenario bak ITERA (dideteksi model) jadi putaran utama, skenario tong umum dimatikan (bisa dinyalakan lagi).
+        for k, lama, baru in (("confidence_threshold", "0.50", "0.35"), ("full_threshold", "80", "50"),
+                              ("empty_threshold", "15", "10")):
+            con.execute("UPDATE system_settings SET setting_value=? WHERE setting_key=? AND setting_value=?",
+                        (baru, k, lama))
+        con.execute("UPDATE sim_images SET is_enabled=0, sort_order=sort_order+20 WHERE is_builtin=1 AND condition!='ai'")
+        con.execute("INSERT INTO system_settings(setting_key,setting_value,updated_at) VALUES('skema_v2','1',?)", (ts,))
     if not con.execute("SELECT setting_value FROM system_settings WHERE setting_key='ingest_api_key'").fetchone()[0]:
         con.execute("UPDATE system_settings SET setting_value=? WHERE setting_key='ingest_api_key'",
                     (secrets.token_urlsafe(24),))
@@ -400,8 +409,14 @@ class Detector:
             return "sebagian"
         return None
 
+    def is_bak_model(self):
+        """Model hasil notebook (YOLOv8-seg) dengan kelas box_sampah & sampah_plastik."""
+        return self.model is not None and {"box_sampah", "sampah_plastik"} <= set(self.model.names.values())
+
     def infer(self, frame):
-        """Return list box: {kind, conf, box:[x1,y1,x2,y2] (0-1)}."""
+        """Return (boxes, fullness). box: {kind, conf, box:[x1,y1,x2,y2] (0-1)}."""
+        if self.is_bak_model():
+            return self._infer_bak(frame)
         conf_th = sget("confidence_threshold", float)
         res = self.model.predict(frame, conf=conf_th, verbose=False)[0]
         h, w = frame.shape[:2]
@@ -413,7 +428,55 @@ class Detector:
                 continue
             x1, y1, x2, y2 = b.xyxy[0].tolist()
             out.append({"kind": kind, "conf": float(b.conf), "box": [x1 / w, y1 / h, x2 / w, y2 / h]})
-        return out
+        fullness, _ = estimate_fullness(out)
+        return out, fullness
+
+    def _infer_bak(self, frame):
+        """Sama dengan notebook: mask bak (convex hull) -> plastik di dalam/luar -> level = % bak tertutup plastik."""
+        conf_th = sget("confidence_threshold", float)
+        res = self.model.predict(frame, conf=conf_th, iou=0.5, imgsz=640, retina_masks=True, verbose=False)[0]
+        h, w = frame.shape[:2]
+        names = res.names
+        bak, plastik = None, []
+        for i, b in enumerate(res.boxes):
+            kelas, conf = names[int(b.cls)], float(b.conf)
+            xyxy = [float(v) for v in b.xyxy[0].tolist()]
+            if kelas == "box_sampah" and res.masks is not None:
+                luas = (xyxy[2] - xyxy[0]) * (xyxy[3] - xyxy[1])
+                if bak is None or conf * luas > bak[1] * bak[3]:
+                    bak = (i, conf, xyxy, luas)
+            elif kelas == "sampah_plastik":
+                plastik.append({"conf": conf, "xyxy": xyxy})
+        if bak is None:  # tanpa bak, level tidak bisa dihitung
+            return [], None
+        import cv2 as _cv2  # tersedia karena ultralytics memerlukannya
+        m = (res.masks.data[bak[0]].cpu().numpy() > 0.5).astype(np.uint8)
+        if m.shape != (h, w):
+            m = _cv2.resize(m, (w, h), interpolation=_cv2.INTER_NEAREST)
+        kontur, _ = _cv2.findContours(m, _cv2.RETR_EXTERNAL, _cv2.CHAIN_APPROX_SIMPLE)
+        if not kontur:
+            return [], None
+        hull = _cv2.convexHull(max(kontur, key=_cv2.contourArea))
+        mask = np.zeros((h, w), np.uint8)
+        _cv2.fillPoly(mask, [hull], 1)
+        tutup = np.zeros_like(mask)
+        out = []
+        for d in plastik:
+            x1, y1, x2, y2 = (int(v) for v in d["xyxy"])
+            bagian = mask[y1:y2, x1:x2]
+            dalam = bagian.size and bagian.mean() >= 0.5
+            if dalam:
+                tutup[y1:y2, x1:x2] = 1
+            out.append({"kind": "plastik" if dalam else "berserakan", "conf": round(d["conf"], 3),
+                        "box": [x1 / w, y1 / h, x2 / w, y2 / h]})
+        level = round(float((tutup & mask).sum() / max(1, mask.sum()) * 100), 1)
+        full_th, empty_th = sget("full_threshold", float), sget("empty_threshold", float)
+        status = "penuh" if level >= full_th else "kosong" if level <= empty_th else "sebagian"
+        x1, y1, x2, y2 = bak[2]
+        poly = [[round(float(px) / w, 4), round(float(py) / h, 4)] for px, py in hull.reshape(-1, 2)]
+        out.insert(0, {"kind": status, "conf": round(bak[1], 3), "box": [x1 / w, y1 / h, x2 / w, y2 / h],
+                       "poly": poly, "level": level, "bak": True})
+        return out, level
 
 
 def estimate_fullness(boxes):
@@ -450,17 +513,25 @@ def parse_roi():
 
 SIM_CONDITIONS = {  # kondisi skenario -> (kepenuhan bawaan, kotak bawaan untuk foto unggahan)
     "penuh": (92, [{"kind": "penuh", "box": [0.30, 0.15, 0.70, 0.92]}]),
-    "sebagian": (55, [{"kind": "sebagian", "box": [0.30, 0.15, 0.70, 0.92]}]),
+    "sebagian": (35, [{"kind": "sebagian", "box": [0.30, 0.15, 0.70, 0.92]}]),
     "kosong": (6, [{"kind": "kosong", "box": [0.30, 0.15, 0.70, 0.92]}]),
     "berserakan": (None, [{"kind": "berserakan", "box": [0.15, 0.62, 0.85, 0.96]}]),
     "penuh_berserakan": (94, [{"kind": "penuh", "box": [0.32, 0.10, 0.66, 0.82]},
                               {"kind": "berserakan", "box": [0.15, 0.74, 0.90, 0.97]}]),
     "offline": (None, []),
+    "ai": (None, []),   # kotak & level dihitung oleh model AI (models/best.pt) dari foto
 }
 SIM_LABEL = {"penuh": "Penuh", "sebagian": "Terisi sebagian", "kosong": "Kosong", "berserakan": "Berserakan",
-             "penuh_berserakan": "Penuh & berserakan", "offline": "CCTV offline"}
+             "penuh_berserakan": "Penuh & berserakan", "offline": "CCTV offline", "ai": "Deteksi AI"}
 
 BUILTIN_SCENARIOS = [  # (nama, file, kondisi, kepenuhan, kotak)
+    # Foto bak bata ITERA: kotak & level dihitung langsung oleh model hasil training (kondisi "ai")
+    ("Bak bata ITERA, kosong", "static/img/sim/bak-kosong.jpg", "ai", None, []),
+    ("Bak bata ITERA, terisi sebagian", "static/img/sim/bak-sebagian.jpg", "ai", None, []),
+    ("Bak terisi, plastik tercecer", "static/img/sim/bak-sebagian-berserakan.jpg", "ai", None, []),
+    ("Bak terisi, banyak plastik di luar", "static/img/sim/bak-berserakan-banyak.jpg", "ai", None, []),
+    ("Bak bata ITERA, penuh", "static/img/sim/bak-penuh.jpg", "ai", None, []),
+    ("Bak penuh & berserakan", "static/img/sim/bak-penuh-berserakan.jpg", "ai", None, []),
     ("Penuh & berserakan, siang", "static/img/sim/penuh-siang.jpg", "penuh_berserakan", 94,
      [{"kind": "penuh", "box": [0.355, 0.20, 0.595, 0.885]},
       {"kind": "berserakan", "box": [0.345, 0.74, 0.72, 0.93]}, {"kind": "berserakan", "box": [0.765, 0.79, 0.83, 0.85]}]),
@@ -493,10 +564,13 @@ class Simulator:
     """Mode simulasi: memutar daftar foto skenario (menu Simulasi) seolah-olah gambar CCTV,
     lengkap dengan hasil 'deteksi' sehingga alur alert, riwayat, dan WhatsApp bisa diuji tanpa kamera."""
 
-    def __init__(self):
+    def __init__(self, detector=None):
         self.t0 = time.time()
         self.cache = None          # (id skenario, frame dasar, boxes, fullness, waktu)
         self.images = {}
+        self.detector = detector
+        self.ai_cache = {}         # hasil model per foto (foto diam -> cukup dideteksi sekali)
+        self.ai_error = None
         self.rows = []
         self.rows_t = 0
         self.current = None
@@ -532,11 +606,28 @@ class Simulator:
             im = img_read(os.path.join(BASE_DIR, row["file_path"]))
             if im is None:
                 im = np.full((441, 960, 3), 40, np.uint8)
+            im = pad_landscape(im)
             h, w = im.shape[:2]
             if w != 960:
                 im = img_resize(im, 960, int(960 * h / w))
             self.images[key] = im
         return self.images[key]
+
+    def _ai(self, row, base):
+        """Jalankan model pada foto skenario (sekali per foto). None jika model belum tersedia."""
+        key = (row["id"], row["file_path"])
+        if key not in self.ai_cache:
+            model = self.detector.ensure() if self.detector else None
+            if model is None:
+                self.ai_error = (self.detector.error if self.detector else None) or "Model AI belum tersedia"
+                return None
+            try:
+                self.ai_cache[key] = self.detector.infer(base)
+                self.ai_error = None
+            except Exception as e:  # jaga agar simulasi tetap jalan
+                self.ai_error = f"Deteksi AI gagal: {e}"
+                return None
+        return self.ai_cache[key]
 
     def step(self):
         """Return (frame, boxes, fullness), atau None jika skenario = CCTV offline.
@@ -549,6 +640,13 @@ class Simulator:
         interval = max(0.3, sget("detection_interval", float))
         if self.cache is None or self.cache[0] != row["id"] or time.time() - self.cache[4] >= interval:
             base = self._image(row)
+            if row["condition"] == "ai":
+                hasil = self._ai(row, base)
+                boxes, fullness = (hasil if hasil else ([], None))
+                self.cache = (row["id"], base, boxes, fullness, time.time())
+                _, base, boxes, fullness, _ = self.cache
+                noise = np.random.normal(0, 3, base.shape).astype(np.int16)
+                return np.clip(base.astype(np.int16) + noise, 0, 255).astype(np.uint8), boxes, fullness
             boxes = [{"kind": b["kind"], "box": b["box"],
                       "conf": round(random.uniform(0.84, 0.96) if b["kind"] != "berserakan"
                                     else random.uniform(0.74, 0.92), 2)}
@@ -565,6 +663,7 @@ class Simulator:
     def status(self):
         r = self.current
         return {"mode": sget("sim_mode"), "next_in": self.next_in, "cycle": sget("sim_cycle", float),
+                "ai_error": self.ai_error if r and r["condition"] == "ai" else None,
                 "active": {"id": r["id"], "name": r["name"], "condition": r["condition"]} if r else None}
 
 
@@ -589,7 +688,7 @@ class Monitor:
         self.last_sample = 0
         self.offline_logged = False
         self.detector = Detector()
-        self.sim = Simulator()
+        self.sim = Simulator(self.detector)
         self.cap = None
         self.cap_url = None
         self.restart_flag = False
@@ -632,8 +731,9 @@ class Monitor:
                     time.sleep(1)
                     continue
                 if url.lower() in ("demo", "simulasi", ""):
-                    self.mode = "simulasi"
                     res = self.sim.step()
+                    cur = self.sim.current
+                    self.mode = "simulasi + AI" if cur and cur["condition"] == "ai" and not self.sim.ai_error else "simulasi"
                     if res is None:  # skenario "CCTV offline"
                         self._set_online(False, cam)
                         time.sleep(0.5)
@@ -660,8 +760,7 @@ class Monitor:
                     model = self.detector.ensure()
                     if model is not None:
                         self.mode = "yolo"
-                        boxes = self.detector.infer(frame)
-                        fullness, _ = estimate_fullness(boxes)
+                        boxes, fullness = self.detector.infer(frame)
                         self._process(cam, frame, boxes, fullness)
                     else:
                         self.mode = "kamera (tanpa model)"
@@ -797,6 +896,25 @@ class Monitor:
             }
 
 
+def box_text(b):
+    if b.get("bak"):
+        return f"Bak {LABEL.get(b['kind'], b['kind']).lower()} - level {b['level']:.0f}%"
+    return f"Sampah {LABEL.get(b['kind'], b['kind'])} ({b['conf'] * 100:.0f}%)"
+
+
+def pad_landscape(im):
+    """Foto tegak (portrait) dijadikan 4:3 mendatar dengan latar buram, agar pas di tampilan CCTV."""
+    h, w = im.shape[:2]
+    if w >= h:
+        return im
+    from PIL import ImageFilter
+    W = int(h * 4 / 3)
+    src = PILImage.fromarray(im[..., ::-1])
+    bg = src.resize((W, h)).filter(ImageFilter.GaussianBlur(30)).point(lambda v: int(v * 0.55))
+    bg.paste(src, ((W - w) // 2, 0))
+    return np.asarray(bg)[..., ::-1].copy()
+
+
 def _font(size=14):
     try:
         return ImageFont.load_default(size=size)
@@ -815,8 +933,14 @@ def _draw_boxes_pil(frame, boxes, roi=None):
     for b in boxes:
         x1, y1, x2, y2 = [int(v * (w if i % 2 == 0 else h)) for i, v in enumerate(b["box"])]
         col = (200, 40, 40) if b["kind"] in ("penuh", "berserakan") else (60, 160, 80)
-        d.rectangle([x1, y1, x2, y2], outline=col, width=2)
-        txt = f"Sampah {LABEL.get(b['kind'], b['kind'])} ({b['conf'] * 100:.0f}%)"
+        if b["kind"] == "plastik":
+            d.rectangle([x1, y1, x2, y2], outline=(60, 190, 80), width=1)
+            continue
+        if b.get("poly"):
+            d.polygon([(px * w, py * h) for px, py in b["poly"]], outline=(0, 200, 230), width=2)
+        else:
+            d.rectangle([x1, y1, x2, y2], outline=col, width=2)
+        txt = box_text(b)
         l, t, r, bt = d.textbbox((0, 0), txt, font=font)
         top = max(0, y1 - (bt - t) - 8)
         d.rectangle([x1, top, x1 + (r - l) + 8, y1], fill=col)
@@ -837,8 +961,15 @@ def draw_boxes(frame, boxes, roi=None):
     for b in boxes:
         x1, y1, x2, y2 = [int(v * (w if i % 2 == 0 else h)) for i, v in enumerate(b["box"])]
         col = (40, 40, 200) if b["kind"] in ("penuh", "berserakan") else (80, 160, 60)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
-        txt = f"Sampah {LABEL.get(b['kind'], b['kind'])} ({b['conf'] * 100:.0f}%)"
+        if b["kind"] == "plastik":      # plastik di dalam bak: kotak tipis tanpa label
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (80, 190, 60), 1)
+            continue
+        if b.get("poly"):
+            pts = np.array([[px * w, py * h] for px, py in b["poly"]], np.int32)
+            cv2.polylines(frame, [pts], True, (230, 200, 0), 2)
+        else:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
+        txt = box_text(b)
         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         cv2.rectangle(frame, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, y1), col, -1)
         cv2.putText(frame, txt, (x1 + 4, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
@@ -1339,7 +1470,7 @@ def simulasi():
                     full = float(request.form["fullness"]) if request.form.get("fullness") else default_full
                 except ValueError:
                     full = default_full
-                if cond in ("berserakan", "offline"):
+                if cond in ("berserakan", "offline", "ai"):
                     full = None
                 name = (request.form.get("name") or "").strip()[:80] or f"Foto unggahan ({SIM_LABEL[cond]})"
                 con.execute("INSERT INTO sim_images(name,file_path,condition,fullness,boxes,is_enabled,is_builtin,"
@@ -1446,7 +1577,7 @@ def api_state():
         "last_sent": last_sent,
         "recipients": [dict(r) for r in recips],
         "pending": pending,
-        "sim": monitor.sim.status() if monitor.mode == "simulasi" else None,
+        "sim": monitor.sim.status() if monitor.mode.startswith("simulasi") else None,
         "thresholds": {"full": sget("full_threshold", float), "empty": sget("empty_threshold", float)},
         "roi": parse_roi(),
         "server_time": now_str(),
